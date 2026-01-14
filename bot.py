@@ -10,27 +10,31 @@ CHAT_ID = "1557082529"
 WALLET_TO_WATCH = "E1zGzPY1WdJoHSzf928NWTkZjcAhnUaN1xzF6BhCTsvS"
 HELIUS_API_KEY = "0942caa0-5fa4-4fd2-99d7-0a18897f9b31"
 
-# Render'ın kapanmaması için basit bir web sunucusu
+# 1. RENDER İÇİN PORT DİNLEYİCİ (Port hatasını çözer)
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot Calisiyor!")
+        self.wfile.write(b"Bot Aktif!")
 
-def run_health_server():
+def run_port_listener():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    print(f"✅ Port {port} dinleniyor...")
     server.serve_forever()
 
+# 2. TELEGRAM BİLDİRİM FONKSİYONU
 def send_telegram(msg):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"}
     try: requests.post(url, data=payload)
     except: pass
 
-def start_bot():
+# 3. ASIL TAKİP DÖNGÜSÜ
+def start_wallet_watch():
     last_seen_tx = None
-    print("🔍 Takip başlatıldı...")
+    print(f"🔍 {WALLET_TO_WATCH} takibi başlatıldı...")
+    
     while True:
         try:
             url = f"https://api.helius.xyz/v0/addresses/{WALLET_TO_WATCH}/transactions?api-key={HELIUS_API_KEY}"
@@ -44,10 +48,13 @@ def start_bot():
                         msg = f"🟢 <b>YENİ HAREKET!</b>\n\n{desc}\n\n🔗 <a href='https://solscan.io/tx/{current_tx}'>Solscan</a>"
                         send_telegram(msg)
                     last_seen_tx = current_tx
-        except Exception as e: print(f"Hata: {e}")
-        time.sleep(10)
+        except Exception as e:
+            print(f"Döngü hatası: {e}")
+        time.sleep(15)
 
-# Hem web sunucusunu hem botu aynı anda başlat
+# HEPSİNİ BAŞLAT
 if __name__ == "__main__":
-    threading.Thread(target=run_health_server, daemon=True).start()
-    start_bot()
+    # Port dinleyiciyi arka planda başlat
+    threading.Thread(target=run_port_listener, daemon=True).start()
+    # Takip botunu başlat
+    start_wallet_watch()
