@@ -4,55 +4,46 @@ import os
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# --- KİŞİSEL BİLGİLERİN ---
+# --- BİLGİLERİN ---
 TELEGRAM_TOKEN = "8570142293:AAH6Nh5yY7i8NPE8hTVway-AD5YPg9qYLMk"
 CHAT_ID = "1557082529"
 WALLET_TO_WATCH = "E1zGzPY1WdJoHSzf928NWTkZjcAhnUaN1xzF6BhCTsvS"
 HELIUS_API_KEY = "0942caa0-5fa4-4fd2-99d7-0a18897f9b31"
 
-# 1. RENDER PORT HATASINI ÇÖZEN SUNUCU
-class HealthCheckHandler(BaseHTTPRequestHandler):
+# Render'ın beklediği kapıyı (port) açan mini sunucu
+class SimpleServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
-        self.wfile.write(b"Bot Aktif ve Calisiyor!")
+        self.wfile.write(b"Bot Aktif!")
 
-def run_health_server():
-    # Render'ın verdiği portu kullan, yoksa 10000 kullan
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
-    print(f"✅ Web Sunucusu Başlatıldı - Port: {port}")
+def run_web_server():
+    # Render her zaman 'PORT' isimli bir değişken gönderir
+    port = int(os.environ.get("PORT", 8080)) 
+    server = HTTPServer(('0.0.0.0', port), SimpleServer)
+    print(f"--- Sunucu {port} portunda baslatildi ---")
     server.serve_forever()
 
-# 2. ASIL TAKİP BOTU FONKSİYONU
-def start_wallet_watcher():
-    last_seen_tx = None
-    print(f"🔍 Takip Başlatıldı: {WALLET_TO_WATCH}")
-    
+def start_watching():
+    last_tx = None
+    print(f"--- Takip Baslatildi: {WALLET_TO_WATCH} ---")
     while True:
         try:
             url = f"https://api.helius.xyz/v0/addresses/{WALLET_TO_WATCH}/transactions?api-key={HELIUS_API_KEY}"
-            response = requests.get(url)
-            if response.status_code == 200:
-                txs = response.json()
-                if txs:
-                    current_tx = txs[0].get('signature')
-                    if last_seen_tx is not None and current_tx != last_seen_tx:
-                        desc = txs[0].get('description', 'Yeni İşlem!')
-                        msg = f"🟢 <b>YENİ HAREKET!</b>\n\n{desc}\n\n🔗 <a href='https://solscan.io/tx/{current_tx}'>Solscan</a>"
-                        # Telegram'a gönder
-                        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", 
-                                      data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"})
-                        print(f"✅ Bildirim Gönderildi: {current_tx}")
-                    last_seen_tx = current_tx
-        except Exception as e:
-            print(f"Hata: {e}")
-        time.sleep(15) # 15 saniyede bir kontrol et
+            r = requests.get(url)
+            if r.status_code == 200:
+                data = r.json()
+                if data:
+                    current = data[0].get('signature')
+                    if last_tx and current != last_tx:
+                        msg = f"🟢 <b>HAREKET!</b>\n\n{data[0].get('description')}\n\n🔗 <a href='https://solscan.io/tx/{current}'>Solscan</a>"
+                        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"})
+                    last_tx = current
+        except: pass
+        time.sleep(20)
 
-# 3. ANA ÇALIŞTIRICI
 if __name__ == "__main__":
-    # Web sunucusunu ayrı bir kolda (thread) başlat ki botu engellemesin
-    threading.Thread(target=run_health_server, daemon=True).start()
-    # Botu başlat
-    start_wallet_watcher()
+    # ÖNCE web sunucusunu başlatıyoruz ki Render hata vermesin
+    threading.Thread(target=run_web_server, daemon=True).start()
+    start_watching()
